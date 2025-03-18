@@ -1,0 +1,102 @@
+
+# Loads default set of integrations. Do not remove.
+default_config:
+
+# Load frontend themes from the themes folder
+#frontend:
+#  themes: !include_dir_merge_named themes
+
+frontend:
+  themes: !include_dir_merge_named themes
+
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml
+
+
+# 优化后的完整配置
+mqtt:
+  sensor:
+    - name: "燃气表计数器"
+      state_topic: "homeassistant/sensor/ir_counter/state"
+      value_template: >
+        {{ 
+          (value_json.count | default(0) | float * 0.01) + 
+          states('input_number.initial_gas_value') | float | 
+          round(3)
+        }}
+      unit_of_measurement: "m³"
+      device_class: gas
+      state_class: total_increasing
+      unique_id: "gas_meter_001"
+
+input_number:
+  initial_gas_value:
+    name: 初始气量
+    initial: 6030.708
+    min: 0
+    max: 99999
+    step: 0.001
+    unit_of_measurement: m³
+    mode: box  # 新增输入模式设置[4](@ref)
+
+utility_meter:
+  daily_gas_usage:
+    source: sensor.ran_qi_biao_ji_shu_qi
+    cycle: daily
+    name: 今日用气量
+  weekly_gas_usage:
+    source: sensor.ran_qi_biao_ji_shu_qi
+    cycle: weekly
+    name: 本周用气量
+  monthly_gas_usage:
+    source: sensor.ran_qi_biao_ji_shu_qi
+    cycle: monthly
+    name: 本月用气量
+
+sensor:
+  - platform: template
+    sensors:
+      yesterday_gas_usage:
+        friendly_name: 昨日用气量
+        value_template: >-
+          {{ states('sensor.today_gas_usage') | float - 
+            (state_attr('sensor.today_gas_usage', 'last_reset') | default(0)) }}
+        unit_of_measurement: m³
+        device_class: gas
+
+history_stats:
+  weekly_usage_stats:
+    name: 本周用气统计
+    entity_id: sensor.infrared_counter
+    state_type: total
+    start: "{{ now().replace(hour=0, minute=0, second=0) - timedelta(days=now().weekday()) }}"
+    end: "{{ now() }}"
+  monthly_usage_stats:
+    name: 本月用气统计
+    entity_id: sensor.infrared_counter
+    state_type: total
+    start: "{{ now().replace(day=1, hour=0, minute=0, second=0) }}"
+    end: "{{ now() }}"
+
+
+type: vertical-stack
+cards:
+  - type: statistic
+    entity: sensor.infrared_counter
+    name: 当前累计用气量
+  - type: history-graph
+    entities:
+      - sensor.daily_gas_usage
+    hours_to_show: 168  # 显示7天数据
+    title: 每日用气量柱状图
+  - type: glance
+    entities:
+      - entity: sensor.daily_gas_usage
+        name: 今日
+      - entity: sensor.yesterday_gas_usage
+        name: 昨日
+      - entity: sensor.weekly_gas_usage
+        name: 本周
+      - entity: sensor.monthly_gas_usage
+        name: 本月
